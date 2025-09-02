@@ -1,0 +1,19 @@
+# Не загружать токены и секретные данные
+# токен и приватные данные
+.env
+config.py
+
+# локальная база FAQ (Excel)
+data/faq.xlsx
+
+# служебные файлы Python
+__pycache__/
+*.pyc
+
+# виртуальное окружение
+.venv/
+env/
+
+# системные файлы Windows / macOS
+Thumbs.db
+.DS_Store
