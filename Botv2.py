@@ -1,4 +1,3 @@
-
 import os
 import re
 import time
@@ -14,7 +13,7 @@ from enum import Enum
 import pandas as pd
 from dotenv import load_dotenv
 
-from telegram import Update, ReplyKeyboardMarkup, Bot
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder, Application, ContextTypes,
@@ -25,9 +24,9 @@ from telegram.ext import (
 def now_utc() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
-MAX_DELETE_AGE_SEC = 48 * 3600
-MAX_POST_WAIT_SEC = 180   # 3 минуты
-RECENT_MAX = 1000
+MAX_DELETE_AGE_SEC = 48 * 3600       # лимит Телеграма на удаление «чужих» сообщений
+MAX_POST_WAIT_SEC = 180              # ожидание вложений после /post (сек)
+RECENT_MAX = 1000                    # сколько последних сообщений хранить в буфере на чат/тему
 
 # ---------- Конфиг / окружение ----------
 load_dotenv()
@@ -87,7 +86,6 @@ def _is_safe_stem(s: str) -> bool:
 def _rate_limit_suggest(user_id: int) -> bool:
     dq = _last_suggest_at.setdefault(user_id, deque(maxlen=RATE_LIMIT["suggest_per_min"]))
     now = time.time()
-    # очищать не надо — deque фиксированной длины
     if dq and len(dq) == dq.maxlen and now - dq[0] < 60:
         return False
     dq.append(now)
@@ -275,12 +273,9 @@ def _find_files_by_stem_fast(stem: str) -> List[Path]:
     s = (stem or "").lower().strip()
     if not s:
         return []
-    # прямое попадание
     if s in FILE_INDEX:
         return [FILE_INDEX[s]]
-    # префиксы
     out = [path for key, path in FILE_INDEX.items() if key.startswith(s)]
-    # unique
     seen, uniq = set(), []
     for p in out:
         if p not in seen:
@@ -332,7 +327,7 @@ async def _send_target_photo(context: ContextTypes.DEFAULT_TYPE, photo, **kwargs
     _set_last(TARGET_CHAT_ID, TARGET_THREAD_ID, m.message_id)
     return m
 
-# ---------- Буфер недавних сообщений (для /cleanchat) ----------
+# ---------- Буфер недавних сообщений (для /cleanchat и /purgehere) ----------
 RECENT_MSGS: Dict[Tuple[str, int], deque] = {}  # ключ=(chat_id, thread_id_or_0) -> deque(dict)
 
 def _recent_key(chat_id: int | str, thread_id: Optional[int]) -> Tuple[str, int]:
@@ -347,13 +342,12 @@ def _recent_deque(chat_id: int | str, thread_id: Optional[int]) -> deque:
     return dq
 
 async def track_recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ловим ВСЕ сообщения в группах/темах, чтобы /cleanchat мог чистить историю."""
+    """Ловим ВСЕ сообщения в группах/темах, чтобы чистки могли работать по буферу."""
     chat = update.effective_chat
     msg = update.message
     if not msg or chat.type not in ("group", "supergroup"):
         return
     dq = _recent_deque(chat.id, msg.message_thread_id)
-    # normalize date to aware UTC
     mdate = msg.date
     if mdate and mdate.tzinfo is None:
         mdate = mdate.replace(tzinfo=datetime.timezone.utc)
@@ -382,14 +376,34 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
         await update.message.reply_text("Эта команда доступна только в личке с ботом.")
         return
-    await update.message.reply_text(
-        "Команды: /post /send /publish /settarget /settopic /bindhere /deleteme /cleanlast /cleanhere /cleanchat /reindex /listfiles /myid /getchat\n\n"
-        "Публикация в 2 шага:\n"
-        "1) /post | Текст объявления\n"
-        "2) Следом пришли файл(ы) Excel/PDF/картинку (до 3 минут)\n",
-        reply_markup=MAIN_KB
+    guide = (
+        "<b>Как пользоваться ботом</b>\n\n"
+        "🧩 <b>FAQ</b>\n"
+        "• Нажми «❓ У меня есть вопрос» → выбери категорию → вопрос.\n\n"
+        "📌 <b>Публикации</b>\n"
+        "• По умолчанию — в целевой чат/канал из <code>TARGET_CHAT_ID</code>.\n\n"
+        "📝 <b>Публикация объявления (2 шага)</b>\n"
+        "1) В ЛС: <code>/post | Текст объявления</code>\n"
+        "2) В течение 3 минут пришли Excel/PDF/картинку — бот прикрепит их.\n"
+        "• Можно вместо вложений указать стемы файлов из <code>data/</code>:\n"
+        "  <code>/post отчет_октябрь | Сводка</code> — текст попадёт в подпись первого файла.\n\n"
+        "⚡ <b>Быстрая отправка</b>\n"
+        "• <code>/send Текст</code> — мгновенное сообщение в целевую тему/чат.\n"
+        "• <code>/publish</code> — ответь этой командой в ЛС на <i>своё</i> сообщение с медиа — бот скопирует в тему.\n\n"
+        "🧹 <b>Удаление</b>\n"
+        "• <code>/deleteme</code> (в группе): как ответ — удалит цель и команду; без ответа — только команду.\n"
+        "• <code>/cleanlast</code> (в ЛС, для админов): удалит <i>последнее сообщение бота</i> в целевом чате/теме.\n"
+        "• <code>/cleanhere</code> (в группе, для админов): удалит <i>последнее сообщение бота</i> в текущем чате/теме.\n"
+        "• <code>/cleanchat [N]</code> (в группе, для админов): очистит до N последних сообщений (по буферу), оставив только админов.\n"
+        "• <code>/purgehere</code> (в группе, для админов): ответь этой командой на сообщение — удалю всё новее него (в пределах 48 часов, не трогаю админов).\n\n"
+        "💡 <b>Предложения</b>\n"
+        "• Нажми «💡 У меня есть предложение по модернизации данного бота» и напиши текст — бот уведомит админов.\n\n"
+        "🆔 <b>Служебные</b>\n"
+        "• <code>/myid</code>, <code>/getchat</code>, <code>/listfiles</code>, <code>/reindex</code>, <code>/settarget</code>, <code>/settopic</code>.\n\n"
+        "🔐 <i>Приватность</i>: команды/меню работают в личке; публикации идут в привязанную тему."
     )
-    await _audit("help", update, context, "Показ справки")
+    await update.message.reply_text(guide, parse_mode=ParseMode.HTML)
+    await _audit("howto", update, context, "guide shown")
 
 async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid, uname = _fmt_user(update)
@@ -409,11 +423,13 @@ async def getchat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
     await _audit("getchat", update, context, f"chat_id={chat.id}")
 
+# /deleteme — удалить цель/команду
 async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from telegram.error import TelegramError
 
     chat = update.effective_chat
     msg = update.message
+
     if chat.type not in ("group", "supergroup"):
         if _is_private(update):
             await msg.reply_text("Эта команда работает только в группе.")
@@ -423,14 +439,8 @@ async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = target.message_id
 
     try:
-        # кэшируем bot id
-        me_id = BOT_INFO["id"]
-        if me_id is None:
-            me = await context.bot.get_me()
-            BOT_INFO["id"] = me.id
-            BOT_INFO["username"] = me.username
-            me_id = me.id
-
+        me = await context.bot.get_me()
+        me_id = me.id
         my_member = await context.bot.get_chat_member(chat.id, me_id)
         status = getattr(my_member, "status", "")
         can_delete = (status == "creator") or (status == "administrator" and bool(getattr(my_member, "can_delete_messages", False)))
@@ -451,8 +461,8 @@ async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        me_id = BOT_INFO["id"]
-        is_own = (target.from_user and me_id and target.from_user.id == me_id)
+        me = await context.bot.get_me()
+        is_own = (target.from_user and target.from_user.id == me.id)
         if not is_own:
             tdate = target.date
             if tdate and tdate.tzinfo is None:
@@ -482,6 +492,7 @@ async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         await _audit("deleteme_error", update, context, str(e))
 
+# cleanlast / cleanhere
 async def cleanlast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
         await update.message.reply_text("Эта команда доступна только в личке с ботом.")
@@ -518,6 +529,7 @@ async def cleanlast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _audit("cleanlast_error", update, context, str(e))
 
 async def cleanhere(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Удаляет последнее СВОЁ сообщение бота в текущем чате/теме (то, что помнит трекер отправок)."""
     chat = update.effective_chat
     uid = update.effective_user.id if update.effective_user else 0
     if uid not in POST_ADMINS:
@@ -527,7 +539,7 @@ async def cleanhere(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_id = LAST_BOT_MSG.get(key)
     if not msg_id:
         try:
-            await update.message.reply_text("Здесь ещё нет сообщений от меня, которые я помню.")
+            await update.message.reply_text("Здесь ещё нет моих сообщений, которые я помню.")
         except Exception:
             pass
         await _audit("cleanhere_no_msg", update, context, f"key={key}")
@@ -547,8 +559,9 @@ async def cleanhere(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         await _audit("cleanhere_error", update, context, str(e))
 
-# ---------- /cleanchat ----------
+# ---------- /cleanchat — разовая очистка истории (по буферу RECENT) ----------
 async def cleanchat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Удалить последние N сообщений в текущей теме/чате, оставив только админов."""
     from telegram.error import TelegramError
 
     chat = update.effective_chat
@@ -583,7 +596,6 @@ async def cleanchat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = now_utc()
         deleted = 0
         checked = 0
-        # идём с конца (последние сообщения), ограничиваем limit
         for item in reversed(list(dq)[-limit:]):
             checked += 1
             uid_from = item.get("from_user_id")
@@ -607,6 +619,78 @@ async def cleanchat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.reply_text(f"❌ Ошибка очистки: {e}")
         await _audit("cleanchat_error", update, context, str(e))
+
+# ---------- /purgehere — удалить всё новее сообщения-«якоря» ----------
+async def purgehere(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ответь этой командой на СООБЩЕНИЕ — бот удалит все (виденные им) сообщения НОВЕЕ якоря,
+    кроме сообщений админов и старше 48 часов.
+    """
+    from telegram.error import TelegramError
+
+    chat = update.effective_chat
+    msg = update.message
+    uid = update.effective_user.id if update.effective_user else 0
+
+    if chat.type not in ("group", "supergroup"):
+        await msg.reply_text("Команду нужно вызывать в группе/теме.")
+        return
+    if uid not in POST_ADMINS:
+        await msg.reply_text("⛔ Нет прав.")
+        return
+    if not msg.reply_to_message:
+        await msg.reply_text("Ответь этой командой на СООБЩЕНИЕ, до которого нужно очистить (я удалю всё НОВЕЕ него).")
+        return
+
+    admins = await context.bot.get_chat_administrators(chat.id)
+    admin_ids = {a.user.id for a in admins}
+
+    thread_id = msg.message_thread_id
+    dq = _recent_deque(chat.id, thread_id)
+    if not dq:
+        await msg.reply_text("Буфер пуст — нечего чистить (бот не видел сообщений).")
+        return
+
+    anchor_id = msg.reply_to_message.message_id
+    now = now_utc()
+
+    to_delete: List[int] = []
+    for item in reversed(list(dq)):
+        mid = item["message_id"]
+        if mid <= anchor_id:
+            break
+        if item.get("from_user_id") in admin_ids:
+            continue
+        mdate = item.get("date")
+        if isinstance(mdate, datetime.datetime):
+            if mdate.tzinfo is None:
+                mdate = mdate.replace(tzinfo=datetime.timezone.utc)
+            if (now - mdate).total_seconds() > MAX_DELETE_AGE_SEC:
+                continue
+        to_delete.append(mid)
+
+    deleted = 0
+    for mid in to_delete:
+        try:
+            await context.bot.delete_message(chat.id, mid)
+            deleted += 1
+        except TelegramError:
+            pass
+
+    # стараемся убрать саму команду
+    try:
+        await context.bot.delete_message(chat.id, msg.message_id)
+    except Exception:
+        pass
+
+    # Сообщение-итог (учтём как «последнее» бота в этой теме)
+    try:
+        m = await context.bot.send_message(chat.id, f"🧹 Готово. Удалено: {deleted}.", message_thread_id=thread_id)
+        _set_last(chat.id, thread_id, m.message_id)
+    except Exception:
+        pass
+
+    await _audit("purgehere", update, context, f"deleted={deleted}; anchor={anchor_id}")
 
 async def listfiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
@@ -665,6 +749,7 @@ async def settopic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _audit("settopic", update, context, f"TARGET_THREAD_ID={TARGET_THREAD_ID}")
 
 async def bindhere(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Команда оставлена, но из гайда убрана.
     chat = update.effective_chat
     uid = update.effective_user.id if update.effective_user else 0
     if chat.type not in ("group", "supergroup"):
@@ -687,8 +772,10 @@ async def bindhere(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await _audit("bindhere", update, context, f"chat={TARGET_CHAT_ID}, thread={TARGET_THREAD_ID}")
 
-# ---------- Публикация ----------
+# ---------- Сбор вложений из сообщения (для /post) ----------
 def _collect_attachments_from_message(update: Update) -> List[Dict[str, str]]:
+    """Возвращает список вложений текущего сообщения:
+       [{"type": "document"|"photo", "file_id": "<id>"}]"""
     atts: List[Dict[str, str]] = []
     msg = update.message
     if not msg:
@@ -699,6 +786,9 @@ def _collect_attachments_from_message(update: Update) -> List[Dict[str, str]]:
         best = max(msg.photo, key=lambda p: (p.file_size or 0))
         atts.append({"type": "photo", "file_id": best.file_id})
     return atts
+
+# ---------- Публикация /post ----------
+POST_PENDING: Dict[int, Dict[str, object]] = {}
 
 async def cmd_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
@@ -812,38 +902,8 @@ async def capture_post_attachments(update: Update, context: ContextTypes.DEFAULT
 
 # ---------- FAQ / кнопки / предложения ----------
 async def howto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _is_private(update):
-        await update.message.reply_text("Эта функция доступна только в личке с ботом.")
-        return
-    guide = (
-        "<b>Как пользоваться ботом</b>\n\n"
-        "🧩 <b>FAQ</b>\n"
-        "• Нажми «❓ У меня есть вопрос» → выбери категорию → вопрос.\n\n"
-        "📌 <b>Куда публикуется</b>\n"
-        "• По умолчанию — в целевой чат/канал из <code>TARGET_CHAT_ID</code>.\n"
-        "• Чтобы публиковать в тему «Чат бот»: войди в тему и выполни <code>/bindhere</code>.\n"
-        "  Бот запомнит <code>chat_id</code> и <code>thread_id</code>. Сброс темы: <code>/settopic 0</code> (в личке).\n\n"
-        "📝 <b>Публикация объявления (2 шага)</b>\n"
-        "1) В ЛС: <code>/post | Текст объявления</code>\n"
-        "2) В течение 3 минут пришли Excel/PDF/картинку — бот прикрепит их.\n"
-        "• Можно вместо вложений указать стемы файлов из <code>data/</code>:\n"
-        "  <code>/post отчет_октябрь | Сводка</code> — текст попадёт в подпись первого файла.\n\n"
-        "⚡ <b>Быстрая отправка</b>\n"
-        "• <code>/send Текст</code> — мгновенное сообщение в целевую тему/чат.\n"
-        "• <code>/publish</code> — ответь этой командой в ЛС на <i>своё</i> сообщение с медиа — бот скопирует в тему.\n\n"
-        "🧹 <b>Удаление</b>\n"
-        "• <code>/deleteme</code> (в группе): как ответ — удалит цель и команду; без ответа — только команду.\n"
-        "• <code>/cleanlast</code> (в ЛС, для админов): удалит <i>последнее сообщение бота</i> в целевом чате/теме.\n"
-        "• <code>/cleanhere</code> (в группе, для админов): удалит <i>последнее сообщение бота</i> в текущем чате/теме.\n"
-        "• <code>/cleanchat [N]</code> (в группе, для админов): очистит до N последних сообщений (по буферу), оставив только админов.\n\n"
-        "💡 <b>Предложения</b>\n"
-        "• Нажми «💡 У меня есть предложение по модернизации данного бота» и напиши текст — бот уведомит админов.\n\n"
-        "🆔 <b>Служебные</b>\n"
-        "• <code>/myid</code>, <code>/getchat</code>, <code>/listfiles</code>, <code>/reindex</code>, <code>/settarget</code>, <code>/settopic</code>.\n\n"
-        "🔐 <i>Приватность</i>: команды/меню работают в личке; публикации идут в привязанную тему."
-    )
-    await update.message.reply_text(guide, parse_mode=ParseMode.HTML)
-    await _audit("howto", update, context, "guide shown")
+    # уже показано выше как guide; эта функция оставлена для кнопки "ℹ️"
+    return await help_cmd(update, context)
 
 async def crab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
@@ -852,6 +912,11 @@ async def crab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _audit("button_hello", update, context, "crab")
 
 # ---------- FAQ репозиторий ----------
+@dataclass
+class _FAQRepo:  # мелкая обёртка, чтобы код был компактнее
+    xlsx_path: Path
+    data: Dict[str, List[FAQItem]]
+
 class FAQRepository:
     def __init__(self, xlsx_path: Path):
         self.xlsx_path = xlsx_path
@@ -867,7 +932,6 @@ class FAQRepository:
         for sheet, df in book.items():
             if df is None or df.empty:
                 continue
-            # Быстрая очистка пустых строк/NaN
             df = df.replace(r"^\s*$", pd.NA, regex=True).dropna(how="all").fillna("")
             if df.empty:
                 continue
@@ -940,7 +1004,6 @@ CATEGORIES: List[str] = list(repo.data.keys())
 ALL_QUESTIONS: List[Tuple[str, str]] = [(cat, it.question) for cat, items in repo.data.items() for it in items]
 USER_CATEGORY: Dict[int, Optional[str]] = {}
 USER_FLOW: Dict[int, Flow] = {}
-POST_PENDING: Dict[int, Dict[str, object]] = {}
 
 # ---------- Предложения ----------
 async def suggest_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1039,6 +1102,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("cleanlast", cleanlast, filters=filters.ChatType.PRIVATE), group=0)
     app.add_handler(CommandHandler("cleanhere", cleanhere), group=0)
     app.add_handler(CommandHandler("cleanchat", cleanchat), group=0)
+    app.add_handler(CommandHandler("purgehere", purgehere), group=0)
 
     # Кнопки — только в ЛС
     app.add_handler(MessageHandler(
@@ -1055,7 +1119,7 @@ def build_app() -> Application:
     ), group=1)
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(BTN_HOWTO)}$"),
-        howto
+        help_cmd
     ), group=1)
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(BTN_BACK)}$"),
@@ -1074,7 +1138,7 @@ def build_app() -> Application:
         suggest_capture
     ), group=2)
 
-    # Трекер сообщений для /cleanchat — во всех группах/темах
+    # Трекер сообщений для чисток — во всех группах/темах
     app.add_handler(MessageHandler(
         filters.ChatType.GROUPS & ~filters.COMMAND,
         track_recent
