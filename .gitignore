@@ -4,7 +4,7 @@
 config.py
 
 # локальные данные/логи бота
-data/faq.xlsx
+
 data/*.csv          # audit.csv, suggestions.csv
 data/target_chat.txt
 data/target_thread.txt
