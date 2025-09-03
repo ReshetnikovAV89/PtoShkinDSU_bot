@@ -1,0 +1,4 @@
+﻿python-telegram-bot>=20,<21
+pandas>=2.0
+openpyxl
+python-dotenv

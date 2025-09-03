@@ -57,3 +57,4 @@ timestamp;user_id;username;chat_id;chat_type;event;details
 2025-09-03T15:42:06;423243098;'@DruMan89;423243098;private;howto;guide shown
 2025-09-03T16:09:28;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
 2025-09-03T16:09:33;423243098;'@DruMan89;423243098;private;howto;guide shown
+2025-09-03T16:20:19;423243098;'@DruMan89;423243098;private;button_hello;crab
