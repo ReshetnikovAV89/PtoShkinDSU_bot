@@ -34,3 +34,24 @@ timestamp;user_id;username;chat_id;chat_type;event;details
 2025-09-03T12:10:45;5088922031;Дмитрий Алексеенко;5088922031;private;view_question;"category=Доставка персонала (СДП); question=По авиа билетам выезд"
 2025-09-03T12:55:44;5105365881;Дмитрий Апрелков;5105365881;private;start;Пользователь открыл бота
 2025-09-03T12:55:53;5105365881;Дмитрий Апрелков;5105365881;private;howto;guide shown
+2025-09-03T13:03:03;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
+2025-09-03T13:03:08;423243098;'@DruMan89;423243098;private;cleanlast_no_msg;key=('-1002454786265', None)
+2025-09-03T13:29:27;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
+2025-09-03T13:29:40;423243098;'@DruMan89;423243098;private;cleanlast_no_msg;key=('-1002454786265', None)
+2025-09-03T13:33:31;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
+2025-09-03T13:33:37;423243098;'@DruMan89;423243098;private;button_hello;crab
+2025-09-03T13:33:43;423243098;'@DruMan89;423243098;private;button_ask;open categories
+2025-09-03T13:33:45;423243098;'@DruMan89;423243098;private;view_category;category=Доставка персонала (СДП)
+2025-09-03T13:33:48;423243098;'@DruMan89;423243098;private;view_question;"category=Доставка персонала (СДП); question=Заявители повахтенно( ДСУ1 Вахта Вундер С.С.)"
+2025-09-03T13:39:52;423243098;'@DruMan89;423243098;private;button_back;back
+2025-09-03T13:43:43;423243098;'@DruMan89;-1002454786265;supergroup;bindhere;chat=-1002454786265, thread=292
+2025-09-03T13:48:26;423243098;'@DruMan89;423243098;private;cleanlast_no_msg;key=('-1002454786265', 292)
+2025-09-03T13:50:18;423243098;'@DruMan89;423243098;private;post_command;"desc_len=127; stems=-"
+2025-09-03T13:50:18;423243098;'@DruMan89;423243098;private;post_published;"desc_len=127; att=0; files=0"
+2025-09-03T13:51:25;423243098;'@DruMan89;423243098;private;cleanlast_ok;deleted_msg_id=305
+2025-09-03T13:53:09;423243098;'@DruMan89;423243098;private;post_command;"desc_len=145; stems=-"
+2025-09-03T13:53:10;423243098;'@DruMan89;423243098;private;post_published;"desc_len=145; att=0; files=0"
+2025-09-03T13:54:13;423243098;'@DruMan89;423243098;private;post_command;"desc_len=31; stems=-"
+2025-09-03T13:54:14;423243098;'@DruMan89;423243098;private;post_published;"desc_len=31; att=0; files=0"
+2025-09-03T15:38:14;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
+2025-09-03T15:42:06;423243098;'@DruMan89;423243098;private;howto;guide shown
