@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-PtoShkinDSU_bot — Telegram-бот (python-telegram-bot v20+)
-
-Возможности:
-- FAQ из Excel (data/faq.xlsx), поддержка «особых» вкладок A/B/C/D.
-- Публикации: /post (с caption и «ожиданием» вложений до 3 минут), /send, /publish (только «своё»), /settarget.
-- Темы (форумы): /bindhere (привязка к текущей теме), /settopic <thread_id|0> (ручная настройка/сброс).
-- Предложения: текст → уведомление админам, лог в CSV (с безопасностью).
-- Аудит: лог в data/audit.csv и (опц.) уведомления в AUDIT_CHAT_ID — кто заходил, что смотрел, что публиковал.
-- /deleteme: удалить сообщение в группе (как ответ — удалит цель и команду; иначе — только команду). Даёт понятные причины, если не получилось.
-- Privacy Mode OFF: команды/диалоги — только в ЛС; публикации идут в TARGET_CHAT_ID(+опц. thread).
-- /getchat можно вызывать в группе: бот пришлёт chat_id в личку и постарается удалить команду в группе.
-
-Требуется: python-telegram-bot>=20, pandas, openpyxl, python-dotenv
-"""
-
 import os
 import re
 import time
@@ -308,13 +290,24 @@ def _append_suggestion(chat_id: int, user_id: int, username: Optional[str], text
         safe = _sanitize_for_csv(text)
         w.writerow([datetime.datetime.now().isoformat(timespec="seconds"), chat_id, user_id, username or "", safe])
 
+# ---------- Запоминание последнего сообщения бота ----------
+# ключ: (str(chat_id), int|None thread_id) -> int message_id
+LAST_BOT_MSG: Dict[Tuple[str, Optional[int]], int] = {}
+
+def _last_key_for(chat_id: str, thread_id: Optional[int]) -> Tuple[str, Optional[int]]:
+    return (str(chat_id), int(thread_id) if thread_id else None)
+
+def _last_target_key() -> Tuple[str, Optional[int]]:
+    return (str(TARGET_CHAT_ID), int(TARGET_THREAD_ID) if TARGET_THREAD_ID else None)
+
 async def _notify_about_suggestion(context: ContextTypes.DEFAULT_TYPE, text: str, from_user: str):
     safe_text = html.escape(text)
     msg = f"🆕 <b>Новое предложение</b>\nОт: {from_user}\n\n{safe_text}"
     delivered = False
     if SUGGEST_CHAT_ID:
         try:
-            await context.bot.send_message(chat_id=SUGGEST_CHAT_ID, text=msg, parse_mode=ParseMode.HTML)
+            sent = await context.bot.send_message(chat_id=SUGGEST_CHAT_ID, text=msg, parse_mode=ParseMode.HTML)
+            LAST_BOT_MSG[_last_key_for(SUGGEST_CHAT_ID, None)] = sent.message_id
             delivered = True
             logger.info("[SUGGEST] в SUGGEST_CHAT_ID=%s", SUGGEST_CHAT_ID)
         except Exception:
@@ -322,7 +315,8 @@ async def _notify_about_suggestion(context: ContextTypes.DEFAULT_TYPE, text: str
     else:
         for uid in SUGGEST_ADMINS:
             try:
-                await context.bot.send_message(chat_id=uid, text=msg, parse_mode=ParseMode.HTML)
+                sent = await context.bot.send_message(chat_id=uid, text=msg, parse_mode=ParseMode.HTML)
+                LAST_BOT_MSG[_last_key_for(uid, None)] = sent.message_id
                 delivered = True
                 logger.info("[SUGGEST] админу uid=%s", uid)
             except Exception:
@@ -331,33 +325,42 @@ async def _notify_about_suggestion(context: ContextTypes.DEFAULT_TYPE, text: str
         logger.warning("[SUGGEST] Не доставлено ни одному получателю")
 
 async def _send_answer_with_files(update: Update, html_text: str, files: Optional[List[str]]):
-    await update.message.reply_html(html_text)
+    sent = await update.message.reply_html(html_text)
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     if not files:
         return
     for stem in files:
         paths = _find_files_by_stem_fast(stem)
         if not paths:
-            await update.message.reply_text(f"⚠️ Не найден файл: {stem}")
+            warn = await update.message.reply_text(f"⚠️ Не найден файл: {stem}")
+            LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = warn.message_id
             continue
         file_path = paths[0]
         with open(file_path, "rb") as fh:
-            await update.message.reply_document(document=fh, filename=file_path.name, caption=f"📎 {file_path.name}")
+            doc = await update.message.reply_document(document=fh, filename=file_path.name, caption=f"📎 {file_path.name}")
+            LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = doc.message_id
 
 async def post_to_group(context: ContextTypes.DEFAULT_TYPE, text: str, files: Optional[List[Path]] = None):
     if not TARGET_CHAT_ID:
         raise RuntimeError("Не задан TARGET_CHAT_ID в .env и файле target_chat.txt")
+    last_id = None
     if files:
         first, *rest = files
         with open(first, "rb") as f:
-            await context.bot.send_document(
+            m = await context.bot.send_document(
                 chat_id=TARGET_CHAT_ID, document=f, filename=first.name,
                 caption=text, parse_mode=ParseMode.HTML, **_thread_kwargs()
             )
+            last_id = m.message_id
         for p in rest:
             with open(p, "rb") as f:
-                await context.bot.send_document(chat_id=TARGET_CHAT_ID, document=f, filename=p.name, **_thread_kwargs())
+                m = await context.bot.send_document(chat_id=TARGET_CHAT_ID, document=f, filename=p.name, **_thread_kwargs())
+                last_id = m.message_id
     else:
-        await context.bot.send_message(chat_id=TARGET_CHAT_ID, text=text, parse_mode=ParseMode.HTML, **_thread_kwargs())
+        m = await context.bot.send_message(chat_id=TARGET_CHAT_ID, text=text, parse_mode=ParseMode.HTML, **_thread_kwargs())
+        last_id = m.message_id
+    if last_id:
+        LAST_BOT_MSG[_last_target_key()] = last_id
 
 # ---------- Репозиторий ----------
 class FAQRepository:
@@ -468,7 +471,7 @@ def kb_categories() -> ReplyKeyboardMarkup:
 def kb_questions(category: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup([[it.question] for it in repo.data.get(category, [])] + [[BTN_BACK]], resize_keyboard=True)
 
-# ---------- Вспомогательное: собрать вложения ----------
+# ---------- Вспомогательное: вложения ----------
 def _collect_attachments_from_message(update: Update) -> List[Dict[str, str]]:
     msg = update.message
     if not msg:
@@ -488,38 +491,43 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     USER_CATEGORY[update.effective_chat.id] = None
     USER_FLOW[update.effective_chat.id] = None
-    await update.message.reply_text(
+    sent = await update.message.reply_text(
         "Привет! Я <b>PtoShkinDSU_bot</b> 🤖\nВыбирай кнопку ниже 👇",
         reply_markup=kb_main(),
         parse_mode=ParseMode.HTML
     )
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("start", update, context, "Пользователь открыл бота")
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
         await update.message.reply_text("Эта команда доступна только в личке с ботом.")
         return
-    await update.message.reply_text(
-        "Команды: /post /send /publish /settarget /settopic /bindhere /deleteme /reindex /listfiles /myid /getchat\n\n"
+    sent = await update.message.reply_text(
+        "Команды: /post /send /publish /settarget /settopic /bindhere /deleteme /cleanlast /cleanhere /reindex /listfiles /myid /getchat\n\n"
         "Публикация в 2 шага:\n"
         "1) /post | Текст объявления\n"
         "2) Следом пришли файл(ы) Excel/PDF/картинку (до 3 минут)\n",
         reply_markup=kb_main()
     )
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("help", update, context, "Показ справки")
 
 async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     uname = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.full_name
-    await update.message.reply_text(f"👤 Твой Telegram ID: {uid}\nИмя: {uname}")
+    sent = await update.message.reply_text(f"👤 Твой Telegram ID: {uid}\nИмя: {uname}")
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("myid", update, context, "Показ своего ID")
 
 async def getchat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     try:
-        await context.bot.send_message(chat_id=update.effective_user.id, text=f"chat_id = {chat.id}")
+        sent = await context.bot.send_message(chat_id=update.effective_user.id, text=f"chat_id = {chat.id}")
+        LAST_BOT_MSG[_last_key_for(update.effective_user.id, None)] = sent.message_id
     except Exception:
-        await update.message.reply_text(f"chat_id = {chat.id}")
+        sent = await update.message.reply_text(f"chat_id = {chat.id}")
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     if chat.type in ("group", "supergroup"):
         try:
             await context.bot.delete_message(chat_id=chat.id, message_id=update.message.message_id)
@@ -527,7 +535,7 @@ async def getchat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
     await _audit("getchat", update, context, f"chat_id={chat.id}")
 
-# /deleteme — удаление с понятными причинами
+# /deleteme — удаление «цели» или команды
 async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from telegram.error import TelegramError
     import datetime
@@ -535,17 +543,15 @@ async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     msg = update.message
 
-    # только группы/супергруппы
     if chat.type not in ("group", "supergroup"):
         if _is_private(update):
             await msg.reply_text("Эта команда работает только в группе.")
         return
 
-    # что удаляем: ответ → цель; иначе → саму команду
     target = msg.reply_to_message or msg
     target_id = target.message_id
 
-    # проверка прав бота
+    # права бота (для удаления чужих сообщений нужны)
     try:
         me = await context.bot.get_me()
         my_member = await context.bot.get_chat_member(chat.id, me.id)
@@ -555,9 +561,10 @@ async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             can_delete = True
         elif status == "administrator":
             can_delete = bool(getattr(my_member, "can_delete_messages", False))
-        if not can_delete:
+        if not can_delete and (not msg.reply_to_message or (msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.id != me.id)):
             try:
-                await msg.reply_text("Мне нужны права администратора с галочкой «Удалять сообщения».")
+                await msg.reply_text("Мне нужны права администратора с галочкой «Удалять сообщения». "
+                                     "Свои сообщения я могу удалить и без этого.")
             except Exception:
                 pass
             await _audit("deleteme_no_rights", update, context, f"status={status}")
@@ -570,33 +577,35 @@ async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _audit("deleteme_rights_error", update, context, str(e))
         return
 
-    # ограничение 48 часов
+    # ограничение 48 часов (для чужих сообщений), свои можно удалять всегда
     try:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        tdate = target.date
-        if tdate.tzinfo is None:
-            tdate = tdate.replace(tzinfo=datetime.timezone.utc)
-        age_sec = (now - tdate).total_seconds()
-        if age_sec > 48 * 3600:
-            try:
-                await msg.reply_text("Нельзя удалить: сообщению больше 48 часов.")
-            except Exception:
-                pass
-            await _audit("deleteme_too_old", update, context, f"age_sec={int(age_sec)}")
-            return
+        me = await context.bot.get_me()
+        is_own = (target.from_user and target.from_user.id == me.id)
+        if not is_own:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            tdate = target.date
+            if tdate.tzinfo is None:
+                tdate = tdate.replace(tzinfo=datetime.timezone.utc)
+            age_sec = (now - tdate).total_seconds()
+            if age_sec > 48 * 3600:
+                try:
+                    await msg.reply_text("Нельзя удалить: сообщению больше 48 часов.")
+                except Exception:
+                    pass
+                await _audit("deleteme_too_old", update, context, f"age_sec={int(age_sec)}")
+                return
     except Exception as e:
         await _audit("deleteme_age_check_error", update, context, str(e))
 
-    # удаление
-    want_delete_command_too = bool(msg.reply_to_message)
     try:
         await context.bot.delete_message(chat_id=chat.id, message_id=target_id)
-        if want_delete_command_too:
+        # если удаляли «цель» по reply — попробуем удалить и команду
+        if msg.reply_to_message:
             try:
                 await context.bot.delete_message(chat_id=chat.id, message_id=msg.message_id)
             except Exception:
                 pass
-        await _audit("deleteme_ok", update, context, f"deleted_msg_id={target_id}; also_cmd={want_delete_command_too}")
+        await _audit("deleteme_ok", update, context, f"deleted_msg_id={target_id}; also_cmd={bool(msg.reply_to_message)}")
     except TelegramError as e:
         try:
             await msg.reply_text(f"❌ Не смог удалить: {e}")
@@ -604,20 +613,80 @@ async def deleteme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         await _audit("deleteme_error", update, context, str(e))
 
+# ----- Новые команды: cleanlast / cleanhere -----
+async def cleanlast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """В ЛС: удалить последнее сообщение БОТА в TARGET_CHAT_ID/теме. Только POST_ADMINS."""
+    if not _is_private(update):
+        await update.message.reply_text("Эта команда доступна только в личке с ботом.")
+        return
+    uid = update.effective_user.id if update.effective_user else 0
+    if uid not in POST_ADMINS:
+        await update.message.reply_text("⛔ Нет прав.")
+        return
+    key = _last_target_key()
+    msg_id = LAST_BOT_MSG.get(key)
+    if not (TARGET_CHAT_ID and msg_id):
+        await update.message.reply_text("Не найдено последнее сообщение бота для целевого чата/темы.")
+        await _audit("cleanlast_no_msg", update, context, f"key={key}")
+        return
+    try:
+        await context.bot.delete_message(chat_id=TARGET_CHAT_ID, message_id=msg_id)
+        await update.message.reply_text("🧹 Удалил последнее сообщение бота в целевом чате/теме.")
+        await _audit("cleanlast_ok", update, context, f"deleted_msg_id={msg_id}")
+        # можно очистить запись, чтобы не пытаться удалить повторно
+        LAST_BOT_MSG.pop(key, None)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Не смог удалить: {e}")
+        await _audit("cleanlast_error", update, context, str(e))
+
+async def cleanhere(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """В группе/теме: удалить последнее сообщение БОТА в текущем чате/теме. Только POST_ADMINS."""
+    chat = update.effective_chat
+    uid = update.effective_user.id if update.effective_user else 0
+    if uid not in POST_ADMINS:
+        return
+    thread_id = update.message.message_thread_id
+    key = _last_key_for(chat.id, thread_id)
+    msg_id = LAST_BOT_MSG.get(key)
+    if not msg_id:
+        try:
+            await update.message.reply_text("Здесь ещё нет сообщений от меня, которые я помню.")
+        except Exception:
+            pass
+        await _audit("cleanhere_no_msg", update, context, f"key={key}")
+        return
+    try:
+        await context.bot.delete_message(chat_id=chat.id, message_id=msg_id)
+        # постараемся убрать и команду
+        try:
+            await context.bot.delete_message(chat_id=chat.id, message_id=update.message.message_id)
+        except Exception:
+            pass
+        await _audit("cleanhere_ok", update, context, f"deleted_msg_id={msg_id}")
+        LAST_BOT_MSG.pop(key, None)
+    except Exception as e:
+        try:
+            await update.message.reply_text(f"❌ Не смог удалить: {e}")
+        except Exception:
+            pass
+        await _audit("cleanhere_error", update, context, str(e))
+
 async def listfiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
         await update.message.reply_text("Эта команда доступна только в личке с ботом.")
         return
     if not DATA_DIR.exists():
-        await update.message.reply_text("Папка data/ не найдена.")
+        sent = await update.message.reply_text("Папка data/ не найдена.")
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
         await _audit("listfiles", update, context, "data/ not found")
         return
     files = [p.name for p in DATA_DIR.iterdir() if p.is_file()]
     if not files:
-        await update.message.reply_text("В папке data/ файлов нет.")
+        sent = await update.message.reply_text("В папке data/ файлов нет.")
     else:
         msg = "📂 Файлы в data/:\n" + "\n".join(f"• {f}" for f in files)
-        await update.message.reply_text(msg)
+        sent = await update.message.reply_text(msg)
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("listfiles", update, context, f"count={len(files)}")
 
 async def settarget(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -697,7 +766,8 @@ async def send_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Использование: /send <текст сообщения>")
         return
     try:
-        await context.bot.send_message(chat_id=TARGET_CHAT_ID, text=payload, parse_mode=ParseMode.HTML, **_thread_kwargs())
+        m = await context.bot.send_message(chat_id=TARGET_CHAT_ID, text=payload, parse_mode=ParseMode.HTML, **_thread_kwargs())
+        LAST_BOT_MSG[_last_target_key()] = m.message_id
         await update.message.reply_text("✅ Отправлено в группу.")
         await _audit("send", update, context, f"text_len={len(payload)}")
     except Exception as e:
@@ -721,12 +791,14 @@ async def publish_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("Можно публиковать только собственные сообщения.")
         return
     try:
-        await context.bot.copy_message(
+        mid = await context.bot.copy_message(
             chat_id=TARGET_CHAT_ID,
             from_chat_id=msg.chat.id,
             message_id=msg.reply_to_message.message_id,
             **_thread_kwargs()
         )
+        # copy_message возвращает объект MessageId
+        LAST_BOT_MSG[_last_target_key()] = mid.message_id
         await msg.reply_text("✅ Опубликовано в группу.")
         await _audit("publish", update, context, "copy_message")
     except Exception as e:
@@ -752,27 +824,61 @@ async def howto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Эта функция доступна только в личке с ботом.")
         return
     guide = (
-        "<b>Публикация в 2 шага</b>\n"
-        "1) <code>/post | Текст объявления</code>\n"
-        "2) В течение 3 минут пришли Excel/PDF/картинку\n\n"
-        "Можно вместо вложений указать стемы файлов из <code>data/</code>:\n"
-        "<code>/post отчет_октябрь | Сводка</code>\n"
-        "Текст попадёт в подпись к первому файлу."
+        "<b>Как пользоваться ботом</b>\n\n"
+        "🧩 <b>FAQ</b>\n"
+        "• Нажми «❓ У меня есть вопрос» → выбери категорию → вопрос.\n\n"
+
+        "📌 <b>Куда публикуется</b>\n"
+        "• По умолчанию — в целевой чат/канал из <code>TARGET_CHAT_ID</code>.\n"
+        "• Чтобы публиковать в нужную тему (форум) группы: зайди в тему «Чат бот» и выполни <code>/bindhere</code>.\n"
+        "  Бот запомнит <code>chat_id</code> и <code>thread_id</code>. Сброс темы: <code>/settopic 0</code> (в личке).\n\n"
+
+        "📝 <b>Публикация объявления (2 шага)</b>\n"
+        "1) Отправь в ЛС боту: <code>/post | Текст объявления</code>\n"
+        "2) В течение 3 минут пришли Excel/PDF/картинку — бот приложит их к посту.\n"
+        "• Можно вместо вложений указать стемы файлов из <code>data/</code>:\n"
+        "  <code>/post отчет_октябрь | Сводка</code> — текст попадёт в подпись первого файла.\n\n"
+
+        "⚡ <b>Быстрая отправка</b>\n"
+        "• <code>/send Текст</code> — мгновенное сообщение в целевую тему/чат.\n"
+        "• <code>/publish</code> — ответь этой командой в ЛС на <i>своё</i> сообщение с медиа — бот скопирует в тему.\n\n"
+
+        "🧹 <b>Удаление</b>\n"
+        "• <code>/deleteme</code> (в группе): как ответ — удалит цель и команду; без ответа — удалит только команду.\n"
+        "• <code>/cleanlast</code> (в ЛС, для админов): удалит <i>последнее сообщение бота</i> в целевой теме/чате.\n"
+        "• <code>/cleanhere</code> (в группе, для админов): удалит <i>последнее сообщение бота</i> в текущей теме/чате.\n\n"
+
+        "💡 <b>Предложения по боту</b>\n"
+        "• Нажми «💡 У меня есть предложение по модернизации данного бота», напиши текст — бот уведомит админов.\n\n"
+
+        "🆔 <b>Служебные команды</b>\n"
+        "• <code>/myid</code> — твой Telegram ID.\n"
+        "• <code>/getchat</code> — в группе пришлёт <code>chat_id</code> тебе в личку и постарается скрыть команду в группе.\n"
+        "• <code>/listfiles</code> — список файлов в <code>data/</code> (ЛС).\n"
+        "• <code>/reindex</code> — пересборка индекса файлов (ЛС, для админов).\n"
+        "• <code>/settarget &lt;chat_id&gt;</code> — поменять целевой чат (ЛС, для админов).\n"
+        "• <code>/settopic &lt;thread_id|0&gt;</code> — привязать/сбросить тему (ЛС, для админов).\n\n"
+
+        "🔐 <b>Примечание</b>\n"
+        "• Режим приватности у бота выключен, но команды и меню работают в личке — публикации идут в привязанную тему."
     )
-    await update.message.reply_text(guide, parse_mode=ParseMode.HTML)
+    sent = await update.message.reply_text(guide, parse_mode=ParseMode.HTML)
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("howto", update, context, "guide shown")
 
 async def crab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
         return
-    await update.message.reply_text("Привет, лови краба от моей медвежьей лапы! 🦀🐻")
+    sent = await update.message.reply_text("Привет, лови краба от моей медвежьей лапы! 🦀🐻")
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("button_hello", update, context, "crab")
 
 async def ask_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
         return
     USER_CATEGORY[update.effective_chat.id] = None
-    await update.message.reply_text("Выбери категорию 👇", reply_markup=kb_categories())
+    sent = await update.message.reply_text("Выбери категорию 👇", reply_markup=kb_categories())
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("button_ask", update, context, "open categories")
 
 async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -781,10 +887,11 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if USER_CATEGORY.get(chat_id):
         USER_CATEGORY[chat_id] = None
-        await update.message.reply_text("Категории 👇", reply_markup=kb_categories())
+        sent = await update.message.reply_text("Категории 👇", reply_markup=kb_categories())
     else:
         USER_FLOW[chat_id] = None
-        await update.message.reply_text("Главное меню 👇", reply_markup=kb_main())
+        sent = await update.message.reply_text("Главное меню 👇", reply_markup=kb_main())
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("button_back", update, context, "back")
 
 async def choose_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -794,11 +901,12 @@ async def choose_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cat not in CATEGORIES:
         return
     USER_CATEGORY[update.effective_chat.id] = cat
-    await update.message.reply_text(
+    sent = await update.message.reply_text(
         f"Категория: <b>{html.escape(cat)}</b>\nВыбери вопрос 👇",
         reply_markup=kb_questions(cat),
         parse_mode=ParseMode.HTML
     )
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("view_category", update, context, f"category={cat}")
 
 async def choose_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -821,7 +929,8 @@ async def fuzzy_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     from difflib import get_close_matches
     if not text:
-        await update.message.reply_text("Не понял 🤔", reply_markup=kb_main())
+        sent = await update.message.reply_text("Не понял 🤔", reply_markup=kb_main())
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
         return
     chat_id = update.effective_chat.id
     current_cat = USER_CATEGORY.get(chat_id)
@@ -835,11 +944,13 @@ async def fuzzy_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await _send_answer_with_files(update, f"🔎 Похоже, ты про:\n<b>{q}</b>\n\n{it.render()}", it.files)
                     await _audit("search_in_category", update, context, f"cat={current_cat}; query={text}; hit={q}")
                     return
-        await update.message.reply_text("В этой категории не нашёл подходящего вопроса 🤔", reply_markup=kb_questions(current_cat))
+        sent = await update.message.reply_text("В этой категории не нашёл подходящего вопроса 🤔", reply_markup=kb_questions(current_cat))
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
         await _audit("search_in_category_nohit", update, context, f"cat={current_cat}; query={text}")
     else:
         if not ALL_QUESTIONS:
-            await update.message.reply_text("База вопросов пуста. Проверь Excel.", reply_markup=kb_main())
+            sent = await update.message.reply_text("База вопросов пуста. Проверь Excel.", reply_markup=kb_main())
+            LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
             await _audit("search_empty_base", update, context, "no questions")
             return
         options = [q for (_, q) in ALL_QUESTIONS]
@@ -850,11 +961,13 @@ async def fuzzy_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if q_text == q:
                     for it in repo.data.get(cat, []):
                         if it.question == q:
-                            await update.message.reply_html(f"🔎 Ближе всего:\n<b>{q}</b>\n<i>Категория: {cat}</i>")
+                            sent1 = await update.message.reply_html(f"🔎 Ближе всего:\n<b>{q}</b>\n<i>Категория: {cat}</i>")
+                            LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent1.message_id
                             await _send_answer_with_files(update, it.render(), it.files)
                             await _audit("search_global", update, context, f"query={text}; hit_cat={cat}; hit_q={q}")
                             return
-        await update.message.reply_text("Не нашёл подходящего ответа 🤔", reply_markup=kb_categories())
+        sent = await update.message.reply_text("Не нашёл подходящего ответа 🤔", reply_markup=kb_categories())
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
         await _audit("search_global_nohit", update, context, f"query={text}")
 
 # ---------- /post ----------
@@ -884,11 +997,12 @@ async def cmd_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     attachments = _collect_attachments_from_message(update)
 
     if not attachments:
-        POST_PENDING[update.effective_chat.id] = {"desc": desc, "stems": stems, "ts": time.time()}
-        await update.message.reply_text(
+        sent = await update.message.reply_text(
             "Принято. Жду файл(ы) Excel/PDF/картинку следующими сообщениями (до 3 минут). "
             "Также можно указать стемы файлов из data/. Как пришлёшь — опубликую."
         )
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
+        POST_PENDING[update.effective_chat.id] = {"desc": desc, "stems": stems, "ts": time.time()}
 
     await _audit("post_command", update, context, f"desc_len={len(desc)}; stems={','.join(stems) if stems else '-'}")
     await _do_publish(update, context, desc, stems, attachments)
@@ -911,33 +1025,38 @@ async def _do_publish(update: Update, context: ContextTypes.DEFAULT_TYPE, desc: 
 
     try:
         sent_any = False
+        last_id = None
 
         if attachments:
             for i, att in enumerate(attachments):
                 cap = desc if (i == 0 and desc) else None
                 if att["type"] == "document":
-                    await context.bot.send_document(
+                    m = await context.bot.send_document(
                         chat_id=TARGET_CHAT_ID,
                         document=att["file_id"],
                         caption=cap,
                         parse_mode=ParseMode.HTML if cap else None,
                         **_thread_kwargs()
                     )
+                    last_id = m.message_id
                 elif att["type"] == "photo":
-                    await context.bot.send_photo(
+                    m = await context.bot.send_photo(
                         chat_id=TARGET_CHAT_ID,
                         photo=att["file_id"],
                         caption=cap,
                         parse_mode=ParseMode.HTML if cap else None,
                         **_thread_kwargs()
                     )
+                    last_id = m.message_id
             sent_any = True
+            if last_id:
+                LAST_BOT_MSG[_last_target_key()] = last_id
 
         if files_from_data:
             if not sent_any and desc:
                 first, *rest = files_from_data
                 with open(first, "rb") as f:
-                    await context.bot.send_document(
+                    m = await context.bot.send_document(
                         chat_id=TARGET_CHAT_ID,
                         document=f,
                         filename=first.name,
@@ -945,18 +1064,24 @@ async def _do_publish(update: Update, context: ContextTypes.DEFAULT_TYPE, desc: 
                         parse_mode=ParseMode.HTML,
                         **_thread_kwargs()
                     )
+                    last_id = m.message_id
                 for p in rest:
                     with open(p, "rb") as f:
-                        await context.bot.send_document(chat_id=TARGET_CHAT_ID, document=f, filename=p.name, **_thread_kwargs())
+                        m = await context.bot.send_document(chat_id=TARGET_CHAT_ID, document=f, filename=p.name, **_thread_kwargs())
+                        last_id = m.message_id
             else:
                 for p in files_from_data:
                     with open(p, "rb") as f:
-                        await context.bot.send_document(chat_id=TARGET_CHAT_ID, document=f, filename=p.name, **_thread_kwargs())
+                        m = await context.bot.send_document(chat_id=TARGET_CHAT_ID, document=f, filename=p.name, **_thread_kwargs())
+                        last_id = m.message_id
             sent_any = True
+            if last_id:
+                LAST_BOT_MSG[_last_target_key()] = last_id
 
         if not sent_any:
             if desc:
-                await context.bot.send_message(chat_id=TARGET_CHAT_ID, text=desc, parse_mode=ParseMode.HTML, **_thread_kwargs())
+                m = await context.bot.send_message(chat_id=TARGET_CHAT_ID, text=desc, parse_mode=ParseMode.HTML, **_thread_kwargs())
+                LAST_BOT_MSG[_last_target_key()] = m.message_id
                 sent_any = True
             else:
                 await update.message.reply_text(
@@ -966,7 +1091,8 @@ async def _do_publish(update: Update, context: ContextTypes.DEFAULT_TYPE, desc: 
                 await _audit("post_error", update, context, "nothing to publish")
                 return
 
-        await update.message.reply_text("✅ Опубликовано.")
+        sent = await update.message.reply_text("✅ Опубликовано.")
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
         await _audit("post_published", update, context, f"desc_len={len(desc)}; att={len(attachments)}; files={len(files_from_data)}")
     except Exception as e:
         logging.exception("Ошибка публикации: %s", e)
@@ -1001,11 +1127,12 @@ async def suggest_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     chat_id = update.effective_chat.id
     USER_FLOW[chat_id] = "suggest"
-    await update.message.reply_text(
+    sent = await update.message.reply_text(
         "Напиши, пожалуйста, своё предложение одним сообщением.\n"
         "Можно приложить ссылки/описания. После отправки я всё перекину админу. ✍️",
         reply_markup=ReplyKeyboardMarkup([[BTN_BACK]], resize_keyboard=True)
     )
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("suggest_start", update, context, "start")
 
 async def suggest_capture(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1026,7 +1153,8 @@ async def suggest_capture(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not text or text == BTN_BACK:
         USER_FLOW[chat_id] = None
-        await update.message.reply_text("Отменил ввод предложения. Возвращаю в меню 👇", reply_markup=kb_main())
+        sent = await update.message.reply_text("Отменил ввод предложения. Возвращаю в меню 👇", reply_markup=kb_main())
+        LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
         await _audit("suggest_cancel", update, context, "cancel")
         return
 
@@ -1035,7 +1163,8 @@ async def suggest_capture(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _append_suggestion(chat_id, user.id if user else 0, user.username if user else "", text)
     await _notify_about_suggestion(context, text, username)
     USER_FLOW[chat_id] = None
-    await update.message.reply_text("Спасибо! 🚀 Твоё предложение отправлено админам. Возвращаю в меню 👇", reply_markup=kb_main())
+    sent = await update.message.reply_text("Спасибо! 🚀 Твоё предложение отправлено админам. Возвращаю в меню 👇", reply_markup=kb_main())
+    LAST_BOT_MSG[_last_key_for(update.effective_chat.id, update.message.message_thread_id)] = sent.message_id
     await _audit("suggest_sent", update, context, f"len={len(text)}")
 
 # --- Хук старта ---
@@ -1065,6 +1194,8 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("settopic", settopic, filters=filters.ChatType.PRIVATE), group=0)
     app.add_handler(CommandHandler("bindhere", bindhere), group=0)  # вызывать в нужной теме группы
     app.add_handler(CommandHandler("deleteme", deleteme), group=0)  # удаление сообщения в группе
+    app.add_handler(CommandHandler("cleanlast", cleanlast, filters=filters.ChatType.PRIVATE), group=0)  # в ЛС
+    app.add_handler(CommandHandler("cleanhere", cleanhere), group=0)  # в группе
 
     # Кнопки — только в ЛС
     app.add_handler(MessageHandler(
@@ -1127,7 +1258,7 @@ if __name__ == "__main__":
     app = build_app()
     print("Bot is starting…")
 
-    # NEW: Автоматический выбор режима. Если задан BASE_URL — запускаем webhook (для Render/Glitch/Koyeb).
+    # Автовыбор режима: если задан BASE_URL — используем webhook (Render/Glitch/Koyeb)
     BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
     port = int(os.getenv("PORT", "8000"))
 
