@@ -1,18 +1,32 @@
-# Не загружать токены и секретные данные
 # токен и приватные данные
 .env
+.env.*
 config.py
 
-# локальная база FAQ (Excel)
+# локальные данные/логи бота
 data/faq.xlsx
+data/*.csv          # audit.csv, suggestions.csv
+data/target_chat.txt
+data/target_thread.txt
 
 # служебные файлы Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
 
 # виртуальное окружение
 .venv/
+venv/
 env/
+
+# IDE / редакторы
+.vscode/
+.idea/
+
+# тестовые артефакты
+.pytest_cache/
+.coverage
+htmlcov/
 
 # системные файлы Windows / macOS
 Thumbs.db

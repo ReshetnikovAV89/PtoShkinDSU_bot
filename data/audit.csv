@@ -1,0 +1,28 @@
+timestamp;user_id;username;chat_id;chat_type;event;details
+2025-09-03T10:44:27;423243098;'@DruMan89;423243098;private;post_command;"desc_len=4; stems=-"
+2025-09-03T10:44:28;423243098;'@DruMan89;423243098;private;post_published;"desc_len=4; att=0; files=0"
+2025-09-03T10:58:02;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
+2025-09-03T10:58:29;423243098;'@DruMan89;423243098;private;deleteme_ok;"deleted_msg_id=641; also_cmd=False"
+2025-09-03T10:58:58;423243098;'@DruMan89;423243098;private;deleteme_ok;"deleted_msg_id=643; also_cmd=False"
+2025-09-03T11:25:52;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
+2025-09-03T11:26:00;5109923742;'@AleksBlessed;5109923742;private;start;Пользователь открыл бота
+2025-09-03T11:26:05;5109923742;'@AleksBlessed;5109923742;private;button_ask;open categories
+2025-09-03T11:26:12;5109923742;'@AleksBlessed;5109923742;private;view_category;category=АСУ ДСУ
+2025-09-03T11:26:15;5109923742;'@AleksBlessed;5109923742;private;button_back;back
+2025-09-03T11:26:19;5109923742;'@AleksBlessed;5109923742;private;view_category;category=Общие вопросы по работе с ПК
+2025-09-03T11:26:28;5109923742;'@AleksBlessed;5109923742;private;view_question;"category=Общие вопросы по работе с ПК; question=Как отправить фотку на компьютер?"
+2025-09-03T11:26:38;5109923742;'@AleksBlessed;5109923742;private;view_question;"category=Общие вопросы по работе с ПК; question=Подскажиа налог Тотал командер(можно загрузить без сис админа)"
+2025-09-03T11:26:44;5109923742;'@AleksBlessed;5109923742;private;view_question;"category=Общие вопросы по работе с ПК; question=как сменить пароль от учетки?"
+2025-09-03T11:28:35;5109923742;'@AleksBlessed;5109923742;private;button_back;back
+2025-09-03T11:28:40;5109923742;'@AleksBlessed;5109923742;private;view_category;category=Доставка персонала (СДП)
+2025-09-03T11:28:50;5109923742;'@AleksBlessed;5109923742;private;view_question;"category=Доставка персонала (СДП); question=Заявители повахтенно( ДСУ1 Вахта Вундер С.С.)"
+2025-09-03T11:29:39;5109923742;'@AleksBlessed;5109923742;private;view_question;"category=Доставка персонала (СДП); question=Вахтовые автомобили с МЕСТОРОЖДЕНИЯ"
+2025-09-03T11:29:50;5109923742;'@AleksBlessed;5109923742;private;view_question;"category=Доставка персонала (СДП); question=Вахтовые автомобили с УСТЬ-КУТА"
+2025-09-03T11:36:24;423243098;'@DruMan89;423243098;private;button_hello;crab
+2025-09-03T11:36:33;423243098;'@DruMan89;423243098;private;button_ask;open categories
+2025-09-03T11:36:36;423243098;'@DruMan89;423243098;private;view_category;category=Общие вопросы(ОТ, ОУП)
+2025-09-03T11:36:52;423243098;'@DruMan89;423243098;private;view_question;"category=Общие вопросы(ОТ, ОУП); question=Покажи общий график работ вахт 2025 (все участки)"
+2025-09-03T11:37:16;423243098;'@DruMan89;423243098;private;view_question;"category=Общие вопросы(ОТ, ОУП); question=Кто курирует ДСУ в отделе кадров? (напоминаю, что напрямую теперь нельзя отправлять заявления)"
+2025-09-03T11:37:24;423243098;'@DruMan89;423243098;private;view_question;"category=Общие вопросы(ОТ, ОУП); question=Сколько положено дней отпуска?"
+2025-09-03T11:50:33;1305967533;'@mANTicora38RUS;1305967533;private;start;Пользователь открыл бота
+2025-09-03T11:52:49;423243098;'@DruMan89;423243098;private;start;Пользователь открыл бота
