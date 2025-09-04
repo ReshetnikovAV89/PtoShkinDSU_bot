@@ -1,1 +1,20 @@
-TOKEN = '7533604054:AAGa_IGI5cXiH4_ke8p1cCcyN5GcMoTgS1g'
+# Centralized configuration for the bot.
+# IMPORTANT: Do not hardcode secrets here. Read them from environment variables.
+# Koyeb: set BOT_TOKEN, BASE_URL, and optionally WEBHOOK_SECRET in the Service -> Environment tab.
+
+import os
+
+# Telegram bot token (required)
+BOT_TOKEN = os.environ["BOT_TOKEN"]  # raises KeyError if missing
+
+# Public base URL of your deployment. If set, we use WEBHOOK mode (Koyeb).
+# If empty/missing, the bot will switch to POLLING mode (local dev).
+BASE_URL = os.getenv("BASE_URL", "").strip()
+
+# Optional secret token for Telegram webhook verification (Telegram supports it).
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
+
+# Optional tuning knobs (safe defaults).
+POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "2.0"))
+POLL_TIMEOUT = int(os.getenv("POLL_TIMEOUT", "20"))
+PORT = int(os.getenv("PORT", "8080"))

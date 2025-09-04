@@ -1240,34 +1240,53 @@ async def cmd_reindex(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- Точка входа ----------
 if __name__ == "__main__":
-    print(f"[DEBUG] BASE_DIR: {BASE_DIR}")
-    print(f"[DEBUG] XLSX_PATH: {XLSX_PATH} (exists={XLSX_PATH.exists()})")
+    # Строгое разведение режимов: WEBHOOK при наличии BASE_URL, иначе POLLING.
+    import asyncio as _asyncio
+
     app = build_app()
-    print("Bot is starting…")
 
     BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
-    port = int(os.getenv("PORT", "8000"))
-
     if BASE_URL:
-        webhook_path = f"/{BOT_TOKEN}"
-        full_url = f"{BASE_URL}{webhook_path}"
-        print(f"[DEBUG] Using WEBHOOK at {full_url} (port={port})")
-        # Вебхук-режим для Koyeb
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=BOT_TOKEN,
-            webhook_url=full_url,
-            secret_token=WEBHOOK_SECRET,
-            drop_pending_updates=True,
-            allowed_updates=["message"],
-            stop_signals=None,
-        )
+        logger.info("BASE_URL detected -> using WEBHOOK mode")
+        async def _run_webhook():
+            port = int(os.getenv("PORT", "8080"))
+            path = f"/{BOT_TOKEN}"
+            webhook_url = f"{BASE_URL}{path}"
+
+            # Сбросим старый вебхук и установим новый с секретом (если он задан)
+            try:
+                await app.bot.delete_webhook(drop_pending_updates=True)
+            except Exception:
+                pass
+            await app.bot.set_webhook(url=webhook_url, secret_token=WEBHOOK_SECRET)
+            logger.info("Webhook set to %s", webhook_url)
+
+            await app.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path=BOT_TOKEN,
+                drop_pending_updates=True,
+                allowed_updates=None,
+                stop_signals=None,
+            )
+
+        _asyncio.run(_run_webhook())
     else:
-        print("[DEBUG] Using POLLING mode")
-        app.run_polling(
-            close_loop=False,
-            drop_pending_updates=True,
-            allowed_updates=["message"],
-            stop_signals=None,
-        )
+        logger.info("BASE_URL not set -> using POLLING mode")
+        async def _run_polling():
+            # Гарантированно снимаем вебхук перед polling
+            try:
+                await app.bot.delete_webhook(drop_pending_updates=True)
+            except Exception:
+                pass
+
+            await app.run_polling(
+                allowed_updates=None,
+                drop_pending_updates=True,
+                poll_interval=2.0,
+                timeout=20,
+                close_loop=False,
+                stop_signals=None,
+            )
+
+        _asyncio.run(_run_polling())
