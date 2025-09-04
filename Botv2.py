@@ -1,3 +1,25 @@
+# -*- coding: utf-8 -*-
+"""
+PtoShkinDSU_bot — Telegram-бот (python-telegram-bot v20+), готовый к деплою на Koyeb.
+
+Возможности:
+- FAQ из Excel (data/faq.xlsx), поддержка «особых» вкладок (пример: СДП, подписание ПЛ).
+- Публикации: /post (с подписью и «ожиданием» вложений до 3 минут), /send, /publish (копия собственного сообщения).
+- Привязка целевого чата/темы (TARGET_CHAT_ID/TARGET_THREAD_ID) и команды /settarget, /settopic, /bindhere.
+- Предложения (кнопка) с логом в CSV и уведомлением админам или в SUGGEST_CHAT_ID.
+- Аудит в data/audit.csv (и опционально уведомления в AUDIT_CHAT_ID).
+- Чистки: /deleteme, /cleanlast, /cleanhere, /cleanchat, /purgehere.
+- Webhook при наличии BASE_URL, иначе polling—для локальной отладки.
+
+Переменные окружения (минимум):
+- BOT_TOKEN (обязательно)
+- BASE_URL — публичный адрес сервиса (https://<app>.koyeb.app), включает webhook-режим; без него — polling
+- PORT — задаёт Koyeb автоматически, код его берёт (не обязательно задавать вручную)
+- (опц.) WEBHOOK_SECRET — секрет для валидации входящих POST от Telegram
+- (опц.) FAQ_XLSX_PATH — путь до xlsx (по умолчанию data/faq.xlsx)
+- (опц.) TARGET_CHAT_ID, SUGGEST_CHAT_ID, POST_ADMINS, SUGGEST_ADMINS, AUDIT_CHAT_ID
+"""
+
 import os
 import re
 import time
@@ -53,6 +75,10 @@ AUDIT_CHAT_ID = os.getenv("AUDIT_CHAT_ID")
 AUDIT_CSV = DATA_DIR / "audit.csv"
 SUGGESTIONS_CSV = DATA_DIR / "suggestions.csv"
 
+# Опционально: секрет вебхука (рекомендуется для продакшна)
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "") or None
+
+# Пример «особых» вкладок (если твой Excel имеет фиксированную структуру в этих листах)
 SPECIAL_BCD_SHEETS = {"Доставка персонала (СДП)", "Подписание путевых листов"}
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
@@ -913,7 +939,7 @@ async def crab(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- FAQ репозиторий ----------
 @dataclass
-class _FAQRepo:  # мелкая обёртка, чтобы код был компактнее
+class _FAQRepo:
     xlsx_path: Path
     data: Dict[str, List[FAQItem]]
 
@@ -1074,6 +1100,7 @@ async def _on_start(app: Application):
     _build_file_index()
     _load_target_chat()
     _load_target_thread()
+    # Сбрасываем старый вебхук (важно при миграциях/перезапусках)
     await app.bot.delete_webhook(drop_pending_updates=True)
 
     me = await app.bot.get_me()
@@ -1225,11 +1252,13 @@ if __name__ == "__main__":
         webhook_path = f"/{BOT_TOKEN}"
         full_url = f"{BASE_URL}{webhook_path}"
         print(f"[DEBUG] Using WEBHOOK at {full_url} (port={port})")
+        # Вебхук-режим для Koyeb
         app.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path=BOT_TOKEN,
             webhook_url=full_url,
+            secret_token=WEBHOOK_SECRET,
             drop_pending_updates=True,
             allowed_updates=["message"],
             stop_signals=None,
