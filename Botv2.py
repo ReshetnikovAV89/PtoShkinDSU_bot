@@ -1138,11 +1138,11 @@ def build_app() -> Application:
     ), group=1)
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(BTN_ASK)}$"),
-        lambda u, c: u.message.reply_text("Выбери категорию 👇", reply_markup=ReplyKeyboardMarkup([[x] for x in CATEGORIES] + [[BTN_BACK]], resize_keyboard=True))
+        show_categories
     ), group=1)
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(BTN_SUGG)}$"),
-        lambda u, c: suggest_start(u, c)
+        suggest_start
     ), group=1)
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(BTN_HOWTO)}$"),
@@ -1150,7 +1150,7 @@ def build_app() -> Application:
     ), group=1)
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(BTN_BACK)}$"),
-        lambda u, c: u.message.reply_text("Главное меню 👇", reply_markup=MAIN_KB)
+        back_to_main
     ), group=1)
 
     # Вложения после /post — только в ЛС
@@ -1240,53 +1240,30 @@ async def cmd_reindex(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- Точка входа ----------
 if __name__ == "__main__":
-    # Строгое разведение режимов: WEBHOOK при наличии BASE_URL, иначе POLLING.
-    import asyncio as _asyncio
-
     app = build_app()
 
     BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
+    PORT = int(os.getenv("PORT", "8080"))
+
     if BASE_URL:
         logger.info("BASE_URL detected -> using WEBHOOK mode")
-        async def _run_webhook():
-            port = int(os.getenv("PORT", "8080"))
-            path = f"/{BOT_TOKEN}"
-            webhook_url = f"{BASE_URL}{path}"
 
-            # Сбросим старый вебхук и установим новый с секретом (если он задан)
-            try:
-                await app.bot.delete_webhook(drop_pending_updates=True)
-            except Exception:
-                pass
-            await app.bot.set_webhook(url=webhook_url, secret_token=WEBHOOK_SECRET)
-            logger.info("Webhook set to %s", webhook_url)
+        # На всякий — снимем старый вебхук
 
-            await app.run_webhook(
-                listen="0.0.0.0",
-                port=port,
-                url_path=BOT_TOKEN,
-                drop_pending_updates=True,
-                allowed_updates=None,
-                stop_signals=None,
-            )
-
-        _asyncio.run(_run_webhook())
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=os.getenv("BOT_TOKEN"),
+            webhook_url=f"{BASE_URL}/{os.getenv('BOT_TOKEN')}",
+            drop_pending_updates=True,
+            allowed_updates=None,
+        )
     else:
         logger.info("BASE_URL not set -> using POLLING mode")
-        async def _run_polling():
-            # Гарантированно снимаем вебхук перед polling
-            try:
-                await app.bot.delete_webhook(drop_pending_updates=True)
-            except Exception:
-                pass
 
-            await app.run_polling(
-                allowed_updates=None,
-                drop_pending_updates=True,
-                poll_interval=2.0,
-                timeout=20,
-                close_loop=False,
-                stop_signals=None,
-            )
-
-        _asyncio.run(_run_polling())
+        app.run_polling(
+            allowed_updates=None,
+            drop_pending_updates=True,
+            poll_interval=2.0,
+            timeout=20,
+        )
