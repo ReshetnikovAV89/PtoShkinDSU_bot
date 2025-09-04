@@ -937,6 +937,23 @@ async def crab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет, лови краба от моей медвежьей лапы! 🦀🐻")
     await _audit("button_hello", update, context, "crab")
 
+# --- Доп. хендлеры для меню ---
+async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать список категорий в ЛС."""
+    if not _is_private(update):
+        return
+    kb = ReplyKeyboardMarkup(
+        [[x] for x in CATEGORIES] + [[BTN_BACK]],
+        resize_keyboard=True
+    )
+    await update.message.reply_text("Выбери категорию 👇", reply_markup=kb)
+
+async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Вернуться в главное меню в ЛС."""
+    if not _is_private(update):
+        return
+    await update.message.reply_text("Главное меню 👇", reply_markup=MAIN_KB)
+
 # ---------- FAQ репозиторий ----------
 @dataclass
 class _FAQRepo:
