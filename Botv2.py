@@ -1077,6 +1077,13 @@ async def suggest_capture(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not txt:
         return
 
+
+    # Не считать служебные кнопки/категории/вопросы за предложение
+    service_texts = {BTN_HELLO, BTN_ASK, BTN_SUGG, BTN_HOWTO, BTN_BACK}
+    if txt in service_texts or txt in CATEGORIES:
+        return
+    if any(txt == it.question for items in repo.data.values() for it in items):
+        return
     if not _rate_limit_suggest(uid):
         await update.message.reply_text("Слишком часто. Подожди чуть-чуть и отправь снова 🙏")
         await _audit("suggest_ratelimited", update, context, "")

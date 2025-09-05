@@ -61,3 +61,6 @@ timestamp;user_id;username;chat_id;chat_type;event;details
 2025-09-05T13:26:41;423243098;'@DruMan89;423243098;private;button_hello;crab
 2025-09-05T13:27:42;423243098;'@DruMan89;423243098;private;suggest_start;
 2025-09-05T13:27:42;423243098;'@DruMan89;423243098;private;suggest_captured;notified=1
+2025-09-05T13:35:27;423243098;'@DruMan89;423243098;private;button_hello;crab
+2025-09-05T13:35:38;423243098;'@DruMan89;423243098;private;suggest_start;
+2025-09-05T13:35:53;423243098;'@DruMan89;423243098;private;suggest_captured;notified=1
