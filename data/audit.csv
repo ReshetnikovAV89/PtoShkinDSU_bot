@@ -68,3 +68,18 @@ timestamp;user_id;username;chat_id;chat_type;event;details
 2025-09-05T13:50:21;423243098;'@DruMan89;423243098;private;howto;guide shown
 2025-09-05T13:50:43;423243098;'@DruMan89;423243098;private;suggest_start;
 2025-09-05T13:50:56;423243098;'@DruMan89;423243098;private;suggest_captured;notified=1
+2025-09-05T13:58:44;423243098;'@DruMan89;423243098;private;post_command;"desc_len=66; stems=-"
+2025-09-05T13:58:44;423243098;'@DruMan89;423243098;private;post_published;"desc_len=66; att=0; files=0"
+2025-09-05T13:59:09;423243098;'@DruMan89;423243098;private;cleanlast_ok;deleted_msg_id=343
+2025-09-05T13:59:45;423243098;'@DruMan89;423243098;private;post_command;"desc_len=61; stems=-"
+2025-09-05T13:59:46;423243098;'@DruMan89;423243098;private;post_published;"desc_len=61; att=0; files=0"
+2025-09-05T14:00:05;423243098;'@DruMan89;423243098;private;post_attachments;"count=1; desc_len=61"
+2025-09-05T14:00:07;423243098;'@DruMan89;423243098;private;post_published;"desc_len=61; att=1; files=0"
+2025-09-05T14:00:33;423243098;'@DruMan89;423243098;private;cleanhere_no_msg;key=('423243098', 0)
+2025-09-05T14:03:39;423243098;'@DruMan89;-1002454786265;supergroup;cleanhere_ok;deleted_msg_id=345
+2025-09-05T14:03:47;423243098;'@DruMan89;-1002454786265;supergroup;cleanhere_no_msg;key=('-1002454786265', 292)
+2025-09-05T14:03:55;423243098;'@DruMan89;423243098;private;cleanhere_no_msg;key=('423243098', 0)
+2025-09-05T14:04:42;423243098;'@DruMan89;-1002454786265;supergroup;deleteme_ok;deleted_msg_id=344
+2025-09-05T14:04:50;423243098;'@DruMan89;-1002454786265;supergroup;deleteme_ok;deleted_msg_id=348
+2025-09-05T14:06:19;423243098;'@DruMan89;423243098;private;howto;guide shown
+2025-09-05T14:07:38;423243098;'@DruMan89;423243098;private;myid;Показ своего ID
