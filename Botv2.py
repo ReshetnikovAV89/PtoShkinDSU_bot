@@ -937,6 +937,8 @@ async def crab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет, лови краба от моей медвежьей лапы! 🦀🐻")
     await _audit("button_hello", update, context, "crab")
 
+
+
 # --- Доп. хендлеры для меню ---
 async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать список категорий в ЛС."""
