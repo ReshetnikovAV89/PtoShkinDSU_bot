@@ -1,0 +1,7 @@
+﻿python-telegram-bot==20.7
+pandas==2.2.2
+openpyxl==3.1.5
+rapidfuzz==3.6.1
+python-dotenv==1.0.1
+aiohttp==3.9.5
+tzdata==2024.1

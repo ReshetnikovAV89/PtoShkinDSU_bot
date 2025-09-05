@@ -1005,6 +1005,54 @@ ALL_QUESTIONS: List[Tuple[str, str]] = [(cat, it.question) for cat, items in rep
 USER_CATEGORY: Dict[int, Optional[str]] = {}
 USER_FLOW: Dict[int, Flow] = {}
 
+# ---------- Показ категорий/вопросов ----------
+async def _show_category(update: Update, context: ContextTypes.DEFAULT_TYPE, cat: str):
+    """Показ списка вопросов выбранной категории (вкладки Excel)."""
+    USER_CATEGORY[update.effective_user.id] = cat
+    questions = [it.question for it in repo.data.get(cat, [])]
+    if not questions:
+        await update.message.reply_text("В этой категории пока нет вопросов.")
+        return
+    kb = [[q] for q in questions] + [[BTN_BACK]]
+    await update.message.reply_text(
+        f"📂 Категория: {cat}\nВыбери вопрос 👇",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+    )
+
+async def _show_question(update: Update, context: ContextTypes.DEFAULT_TYPE, cat: str, question: str):
+    """Показывает ответ по выбранному вопросу и отправляет прикреплённые файлы из data/ (если есть)."""
+    items = repo.data.get(cat, [])
+    item = next((it for it in items if it.question == question), None)
+    if not item:
+        await update.message.reply_text("Не нашёл такой вопрос. Попробуй выбрать из списка ещё раз.")
+        return
+
+    # Текст ответа
+    text = item.render()
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+    # Отправка файлов (если указаны в Excel)
+    files = item.files or []
+    if files:
+        _build_file_index()  # на случай, если в data/ что-то добавили
+        for name in files:
+            candidates = _find_files_by_stem_fast(name)
+            sent = False
+            for p in candidates:
+                try:
+                    with open(p, "rb") as f:
+                        await update.message.reply_document(f, filename=p.name)
+                    sent = True
+                    break
+                except Exception:
+                    continue
+            if not sent:
+                # Мягко сообщим, что файл не найден
+                try:
+                    await update.message.reply_text(f"⚠️ Файл не найден в data/: {name}")
+                except Exception:
+                    pass
+
 # ---------- Предложения ----------
 async def suggest_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_private(update):
@@ -1125,6 +1173,20 @@ def build_app() -> Application:
         filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(BTN_BACK)}$"),
         lambda u, c: u.message.reply_text("Главное меню 👇", reply_markup=MAIN_KB)
     ), group=1)
+
+    # >>> Новое: обработчики категорий (вкладок) и вопросов
+    for cat in CATEGORIES:
+        app.add_handler(MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(cat)}$"),
+            lambda u, c, cat=cat: _show_category(u, c, cat)
+        ), group=1)
+
+    for cat, q in ALL_QUESTIONS:
+        app.add_handler(MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(rf"^{re.escape(q)}$"),
+            lambda u, c, cat=cat, q=q: _show_question(u, c, cat, q)
+        ), group=1)
+    # <<< Конец нового
 
     # Вложения после /post — только в ЛС
     app.add_handler(MessageHandler(
