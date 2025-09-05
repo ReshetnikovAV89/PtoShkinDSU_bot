@@ -956,6 +956,26 @@ async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("Главное меню 👇", reply_markup=MAIN_KB)
 
+
+# --- DEBUG: лог каждого апдейта и тест-команда /ping ---
+async def _debug_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        chat = update.effective_chat.id if update.effective_chat else None
+        txt  = (update.effective_message.text if update.effective_message else None) or ""
+        logger.info(f"[DEBUG] update chat={chat} text={txt[:120]!r} type={type(update).__name__}")
+    except Exception as e:
+        logger.exception(f"[DEBUG] failed to log update: {e}")
+
+async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_message:
+        await update.effective_message.reply_text("pong ✅")
+
+# --- Фолбэк: любое приватное текстовое сообщение показывает меню ---
+async def _fallback_private(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_private(update):
+        return
+    await update.message.reply_text("Главное меню 👇", reply_markup=MAIN_KB)
+
 # ---------- FAQ репозиторий ----------
 @dataclass
 class _FAQRepo:
@@ -1131,10 +1151,14 @@ async def _on_start(app: Application):
 def build_app() -> Application:
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(_on_start).build()
 
+    # DEBUG: логируем все апдейты
+    app.add_handler(MessageHandler(filters.ALL, _debug_log), group=0)
+
     # Команды
     app.add_handler(CommandHandler("getchat", getchat), group=0)
     app.add_handler(CommandHandler("start", start, filters=filters.ChatType.PRIVATE), group=0)
     app.add_handler(CommandHandler("help", help_cmd, filters=filters.ChatType.PRIVATE), group=0)
+    app.add_handler(CommandHandler("ping", ping_cmd), group=0)
     app.add_handler(CommandHandler("listfiles", listfiles, filters=filters.ChatType.PRIVATE), group=0)
     app.add_handler(CommandHandler("myid", myid), group=0)
     app.add_handler(CommandHandler("post", cmd_post, filters=filters.ChatType.PRIVATE), group=0)
@@ -1189,6 +1213,9 @@ def build_app() -> Application:
         filters.ChatType.GROUPS & ~filters.COMMAND,
         track_recent
     ), group=9)
+
+    # Фолбэк: любое приватное текстовое сообщение -> показать главное меню
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, _fallback_private), group=99)
 
     return app
 
@@ -1275,13 +1302,13 @@ if __name__ == "__main__":
             url_path=os.getenv("BOT_TOKEN"),
             webhook_url=f"{BASE_URL}/{os.getenv('BOT_TOKEN')}",
             drop_pending_updates=True,
-            allowed_updates=None,
+            allowed_updates=Update.ALL_TYPES,
         )
     else:
         logger.info("BASE_URL not set -> using POLLING mode")
 
         app.run_polling(
-            allowed_updates=None,
+            allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True,
             poll_interval=2.0,
             timeout=20,
