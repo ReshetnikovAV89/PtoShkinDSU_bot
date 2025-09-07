@@ -1282,19 +1282,19 @@ async def cmd_reindex(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- Точка входа ----------
 if __name__ == "__main__":
+    print(f"[DEBUG] BASE_DIR: {BASE_DIR}")
+    print(f"[DEBUG] XLSX_PATH: {XLSX_PATH} (exists={XLSX_PATH.exists()})")
+    print("[DEBUG] TARGET_CHAT_ID from env:", TARGET_CHAT_ID)
+    print("[DEBUG] TARGET_THREAD_ID from env:", os.getenv("TARGET_THREAD_ID"))
+
     # Robust parse for TARGET_THREAD_ID
     _tid_raw = os.getenv("TARGET_THREAD_ID")
     try:
-    TARGET_THREAD_ID = int(_tid_raw) if _tid_raw not in (None, "", "None") else None
+        TARGET_THREAD_ID = int(_tid_raw) if _tid_raw not in (None, "", "None") else None
     except ValueError:
-    print("[WARN] TARGET_THREAD_ID is not an integer; ignoring:", _tid_raw)
-    TARGET_THREAD_ID = None
+        print("[WARN] TARGET_THREAD_ID is not an integer; ignoring:", _tid_raw)
+        TARGET_THREAD_ID = None
 
-    print(f"[DEBUG] BASE_DIR: {BASE_DIR}")
-    print(f"[DEBUG] XLSX_PATH: {XLSX_PATH} (exists={XLSX_PATH.exists()})")
-
-    print("[DEBUG] TARGET_CHAT_ID from env:", TARGET_CHAT_ID)
-    print("[DEBUG] TARGET_THREAD_ID from env:", os.getenv("TARGET_THREAD_ID"))
     print("[DEBUG] TARGET_THREAD_ID (parsed int):", TARGET_THREAD_ID)
 
     app = build_app()
@@ -1304,23 +1304,23 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
 
     if BASE_URL:
-    webhook_path = f"/{BOT_TOKEN}"
-    full_url = f"{BASE_URL}{webhook_path}"
-    print(f"[DEBUG] Using WEBHOOK at {full_url} (port={port})")
-    app.run_webhook(
-    listen="0.0.0.0",
-    port=port,
-    url_path=BOT_TOKEN,
-    webhook_url=full_url,
-    drop_pending_updates=True,
-    allowed_updates=["message"],
-    stop_signals=None,
-    )
+        webhook_path = f"/{BOT_TOKEN}"
+        full_url = f"{BASE_URL}{webhook_path}"
+        print(f"[DEBUG] Using WEBHOOK at {full_url} (port={port})")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=BOT_TOKEN,
+            webhook_url=full_url,
+            drop_pending_updates=True,
+            allowed_updates=["message"],
+            stop_signals=None,
+        )
     else:
-    print("[DEBUG] Using POLLING mode")
-    app.run_polling(
-    close_loop=False,
-    drop_pending_updates=True,
-    allowed_updates=["message"],
-    stop_signals=None,
-    )
+        print("[DEBUG] Using POLLING mode")
+        app.run_polling(
+            close_loop=False,
+            drop_pending_updates=True,
+            allowed_updates=["message"],
+            stop_signals=None,
+        )
