@@ -1284,12 +1284,11 @@ async def cmd_reindex(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     print(f"[DEBUG] BASE_DIR: {BASE_DIR}")
     print(f"[DEBUG] XLSX_PATH: {XLSX_PATH} (exists={XLSX_PATH.exists()})")
-    
-print("[DEBUG] TARGET_CHAT_ID from env:", TARGET_CHAT_ID)
-print("[DEBUG] TARGET_THREAD_ID from env:", os.getenv("TARGET_THREAD_ID"))
-print("[DEBUG] TARGET_THREAD_ID (parsed int):", TARGET_THREAD_ID)
+    print("[DEBUG] TARGET_CHAT_ID from env:", TARGET_CHAT_ID)
+    print("[DEBUG] TARGET_THREAD_ID from env:", os.getenv("TARGET_THREAD_ID"))
+    print("[DEBUG] TARGET_THREAD_ID (parsed int):", TARGET_THREAD_ID)
 
-app = build_app()
+    app = build_app()
     print("Bot is starting…")
 
     BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
