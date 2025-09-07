@@ -1,0 +1,24 @@
+services:
+  - type: worker
+    name: telegram-bot
+    env: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python Botv2.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: POST_ADMINS
+        sync: false
+      - key: TARGET_CHAT_ID
+        sync: false
+      - key: TARGET_THREAD_ID
+        sync: false
+      - key: SUGGEST_CHAT_ID
+        sync: false
+      - key: SUGGEST_ADMINS
+        sync: false
+      - key: AUDIT_CHAT_ID
+        sync: false
+      - key: FAQ_XLSX_PATH
+        sync: false

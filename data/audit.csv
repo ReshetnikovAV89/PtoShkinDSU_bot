@@ -83,3 +83,4 @@ timestamp;user_id;username;chat_id;chat_type;event;details
 2025-09-05T14:04:50;423243098;'@DruMan89;-1002454786265;supergroup;deleteme_ok;deleted_msg_id=348
 2025-09-05T14:06:19;423243098;'@DruMan89;423243098;private;howto;guide shown
 2025-09-05T14:07:38;423243098;'@DruMan89;423243098;private;myid;Показ своего ID
+2025-09-07T18:28:29;423243098;'@DruMan89;423243098;private;button_hello;crab
